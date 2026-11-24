@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Tetris Arcade</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #080812;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 1.5rem;
+            color: #00ffff;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.6);
+            letter-spacing: 2px;
+        }
+        .game-container {
+            display: flex;
+            gap: 20px;
+            background: #030307;
+            padding: 15px;
+            border: 3px solid #00ffff;
+            box-shadow: 0 0 25px rgba(0, 255, 255, 0.3);
+            border-radius: 8px;
+        }
+        canvas {
+            background: #000000;
+            border: 2px solid #1a1a2e;
+        }
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            width: 130px;
+        }
+        .panel {
+            background: #0a0a16;
+            padding: 10px;
+            border: 1px solid #1a1a2e;
+            border-radius: 5px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .panel h3 {
+            margin: 0 0 5px 0;
+            font-size: 0.85rem;
+            color: #a0a0c0;
+            text-transform: uppercase;
+        }
+        .panel div {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        .instructions {
+            margin-top: 12px;
+            font-size: 0.8rem;
+            color: #a0a0c0;
+            text-align: center;
+            max-width: 350px;
+            line-height: 1.3;
+        }
+        span.badge {
+            color: #00ffff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>NEON TETRIS</h1>
+    
+    <div class="game-container">
+        <!-- Main Game Board -->
+        <canvas id="tetrisCanvas" width="240" height="480"></canvas>
+        
+        <!-- Sidebar para sa Stats at Next Piece -->
+        <div class="sidebar">
+            <div>
+                <div class="panel">
+                    <h3>Score</h3>
+                    <div id="score">0</div>
+                </div>
+                <div class="panel">
+                    <h3>Lines</h3>
+                    <div id="lines">0</div>
+                </div>
+                <div class="panel">
+                    <h3>Level</h3>
+                    <div id="level">1</div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>Next</h3>
+                <canvas id="nextCanvas" width="90" height="90" style="margin-top: 5px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="instructions">
+        Gamitin ang <span class="badge">Left/Right Arrows</span> para gumalaw, <span class="badge">Up Arrow</span> para umikot, at <span class="badge">Down Arrow</span> para pabilisin ang bagsak.
+    </div>
+
+    <script>
+        const canvas = document.getElementById("tetrisCanvas");
+        const ctx = canvas.getContext("2d");
+        const nextCanvas = document.getElementById("nextCanvas");
+        const nextCtx = nextCanvas.getContext("2d");
+
+        const BLOCK_SIZE = 24;
+        const ROWS = 20;
+        const COLS = 10;
+
+        // I-scale ang context para malinaw ang pag-guhit
+        ctx.scale(1, 1);
+        nextCtx.scale(1, 1);
+
+        // Kulay ng Tetriminos (Neon Theme)
+        const COLORS = [
+            null,
+            '#FF0D72', // T
+            '#0DC2FF', // I
+            '#0DFF72', // S
+            '#F538FF', // Z
+            '#FF8E0D', // L
+            '#FFE138', // J
+            '#3877FF'  // O
+        ];
+
+        // Mga Hugis ng Tetris Pieces
+        const SHAPES = [
+            null,
+            [[0, 0, 0], [1, 1, 1], [0, 1, 0]], // T
+            [[0, 2, 0, 0], [0, 2, 0, 0], [0, 2, 0, 0], [0, 2, 0, 0]], // I
+            [[0, 3, 3], [3, 3, 0], [0, 0, 0]], // S
+            [[4, 4, 0], [0, 4, 4], [0, 0, 0]], // Z
+            [[0, 0, 5], [5, 5, 5], [0, 0, 0]], // L
+            [[6, 0, 0], [6, 6, 6], [0, 0, 0]], // J
+            [[7, 7], [7, 7]] // O
+        ];
+
+        function createMatrix(w, h) {
+            const matrix = [];
+            while (h--) {
+                matrix.push(new Array(w).fill(0));
+            }
+            return matrix;
+        }
+
+        function createPiece(type) {
+            return SHAPES[type];
+        }
+
+        const arena = createMatrix(COLS, ROWS);
+
+        const player = {
+            pos: { x: 0, y: 0 },
+            matrix: null,
+            score: 0,
+            lines: 0,
+            level: 1
+        };
+
+        const nextPlayer = {
+            matrix: createPiece(Math.floor(Math.random() * 7) + 1)
+        };
+
+        function collide(arena, player) {
+            const m = player.matrix;
+            const o = player.pos;
+            for (let r = 0; r < m.length; ++r) {
+                for (let c = 0; c < m[r].length; ++c) {
+                    if (m[r][c] !== 0 &&
+                       (arena[r + o.y] && arena[r + o.y][c + o.x]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, r) => {
+                row.forEach((value, c) => {
+                    if (value !== 0) {
+                        arena[r + player.pos.y][c + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        function rotate(matrix, dir) {
+            for (let r = 0; r < matrix.length; ++r) {
+                for (let c = 0; c < r; ++c) {
+                    [matrix[c][r], matrix[r][c]] = [matrix[r][c], matrix[c][r]];
+                }
+            }
+            if (dir > 0) {
+                matrix.forEach(row => row.reverse());
+            } else {
+                matrix.reverse();
+            }
+        }
+
+        function playerRotate(dir) {
+            const posX = player.pos.x;
+            let offset = 1;
+            rotate(player.matrix, dir);
+            while (collide(arena, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > player.matrix[0].length) {
+                    rotate(player.matrix, -dir);
+                    player.pos.x = posX;
+                    return;
+                }
+            }
+        }
+
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+                arenaSweep();
+                updateScore();
+            }
+            dropCounter = 0;
+        }
+
+        function playerMove(dir) {
+            player.pos.x += dir;
+            if (collide(arena, player)) {
+                player.pos.x -= dir;
+            }
+        }
+
+        function playerReset() {
+            player.matrix = nextPlayer.matrix;
+            nextPlayer.matrix = createPiece(Math.floor(Math.random() * 7) + 1);
+            player.pos.y = 0;
+            player.pos.x = Math.floor(COLS / 2) - Math.floor(player.matrix[0].length / 2);
+            
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+                player.score = 0;
+                player.lines = 0;
+                player.level = 1;
+                updateScore();
+            }
+        }
+
+        function arenaSweep() {
+            let rowCount = 1;
+            outer: for (let r = arena.length - 1; r > 0; --r) {
+                for (let c = 0; c < arena[r].length; ++c) {
+                    if (arena[r][c] === 0) {
+                        continue outer;
+                    }
+                }
+                const row = arena.splice(r, 1)[0].fill(0);
+                arena.unshift(row);
+                ++r;
+
+                player.score += rowCount * 100;
+                player.lines++;
+                rowCount *= 2;
+            }
+            player.level = Math.floor(player.lines / 5) + 1;
+        }
+
+        function drawMatrix(matrix, offset, context = ctx, isNext = false) {
+            matrix.forEach((row, r) => {
+                row.forEach((value, c) => {
+                    if (value !== 0) {
+                        context.fillStyle = COLORS[value];
+                        context.shadowBlur = isNext ? 5 : 10;
+                        context.shadowColor = COLORS[value];
+                        context.fillRect(
+                            (c + offset.x) * BLOCK_SIZE, 
+                            (r + offset.y) * BLOCK_SIZE, 
+                            BLOCK_SIZE - 1, 
+                            BLOCK_SIZE - 1
+                        );
+                        context.shadowBlur = 0;
+                    }
+                });
+            });
+        }
+
+        function draw() {
+            // Linisin ang main screen
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawMatrix(arena, { x: 0, y: 0 });
+            drawMatrix(player.matrix, player.pos);
+
+            // Linisin ang next piece screen
+            nextCtx.fillStyle = "#0a0a16";
+            nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+            
+            // I-center ang next piece sa preview box
+            const matrix = nextPlayer.matrix;
+            const offsetX = (nextCanvas.width / BLOCK_SIZE - matrix[0].length) / 2;
+            const offsetY = (nextCanvas.height / BLOCK_SIZE - matrix.length) / 2;
+            drawMatrix(matrix, { x: offsetX, y: offsetY }, nextCtx, true);
+        }
+
+        function updateScore() {
+            document.getElementById('score').innerText = player.score;
+            document.getElementById('lines').innerText = player.lines;
+            document.getElementById('level').innerText = player.level;
+        }
+
+        let dropCounter = 0;
+        let dropInterval = 1000;
+        let lastTime = 0;
+
+        function gameLoop(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            dropCounter += deltaTime;
+            // Bumabilis ang laro depende sa level
+            let currentInterval = Math.max(150, dropInterval - (player.level - 1) * 100);
+            
+            if (dropCounter > currentInterval) {
+                playerDrop();
+            }
+
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('keydown', event => {
+            if (event.key === 'ArrowLeft') {
+                playerMove(-1);
+            } else if (event.key === 'ArrowRight') {
+                playerMove(1);
+            } else if (event.key === 'ArrowDown') {
+                playerDrop();
+            } else if (event.key === 'ArrowUp') {
+                playerRotate(1);
+            }
+        });
+
+        playerReset();
+        updateScore();
+        gameLoop();
+    </script>
+</body>
+</html>
